@@ -1,3 +1,4 @@
+use crossterm::clipboard::{ClipboardSelection, ClipboardType, CopyToClipboard};
 use crossterm::event::KeyCode;
 use crossterm::style::{Attribute, Color, Stylize};
 use crossterm::terminal::ClearType;
@@ -55,6 +56,9 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
 
     let mut input = String::new();
 
+    let mut status_line =
+        "Use Up/Down to switch focus, Enter to copy focused line to clipboard, Esc to exit.\r\n";
+
     #[derive(PartialEq, Eq)]
     enum Focus {
         Input,
@@ -74,6 +78,16 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
             stdout,
             cursor::RestorePosition,
             terminal::Clear(ClearType::FromCursorDown)
+        )?;
+
+        // Print status line
+        queue!(
+            stdout,
+            style::PrintStyledContent(
+                status_line
+                    .with(Color::DarkGrey)
+                    .attribute(Attribute::Italic),
+            ),
         )?;
 
         // Print prompt and input
@@ -121,7 +135,9 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
         stdout.flush()?;
 
         // Print decoded string
-        let decoded = match decode_string(&input) {
+        let decoded = decode_string(&input);
+
+        let displayed_decoded = match decoded {
             Some(s) => s.with(Color::Yellow),
             None => "<invalid input>".to_string().with(Color::Red),
         };
@@ -137,7 +153,7 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
         if focus == Focus::Decoded {
             queue!(stdout, style::SetAttribute(Attribute::Reverse))?;
         }
-        queue!(stdout, style::Print(&decoded))?;
+        queue!(stdout, style::Print(&displayed_decoded))?;
         if focus == Focus::Decoded {
             queue!(stdout, style::SetAttribute(Attribute::NoReverse))?;
         }
@@ -167,6 +183,35 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
                         Focus::Input => Focus::Decoded,
                         Focus::Encoded => Focus::Input,
                         Focus::Decoded => Focus::Encoded,
+                    }
+                }
+                (KeyCode::Enter, _) => {
+                    let cmd = |content: String| -> CopyToClipboard<String> {
+                        CopyToClipboard {
+                            content,
+                            destination: ClipboardSelection(vec![ClipboardType::Clipboard]),
+                        }
+                    };
+                    // Copy currently focused line to clipboard using crossterm clipboard support
+                    let is_err = match focus {
+                        Focus::Input => stdout.execute(cmd(input.clone())).is_err(),
+                        Focus::Encoded => {
+                            let encoded = encode_string(&input);
+                            stdout.execute(cmd(encoded)).is_err()
+                        }
+                        Focus::Decoded => {
+                            if let Some(ref s) = decode_string(&input) {
+                                stdout.execute(cmd(s.clone())).is_err()
+                            } else {
+                                false
+                            }
+                        }
+                    };
+
+                    if is_err {
+                        status_line = "Failed to copy to clipboard.\r\n";
+                    } else {
+                        status_line = "Copied to clipboard!\r\n";
                     }
                 }
                 (KeyCode::Down, _) => {
