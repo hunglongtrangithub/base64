@@ -161,72 +161,82 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
         stdout.flush()?;
 
         // Wait for key event
-        if let event::Event::Key(event::KeyEvent { code, kind, .. }) = event::read()?
-            && kind == event::KeyEventKind::Press
-        {
-            match code {
-                KeyCode::Char(c) => {
-                    // Only edit input when input line is focused
-                    if focus == Focus::Input {
-                        input.push(c);
-                    }
-                }
-                KeyCode::Backspace => {
-                    if focus == Focus::Input {
-                        input.pop();
-                    }
-                }
-                KeyCode::Esc => {
-                    // User cancelled input. Exit loop.
-                    break;
-                }
-                KeyCode::Up => {
-                    focus = match focus {
-                        Focus::Input => Focus::Decoded,
-                        Focus::Encoded => Focus::Input,
-                        Focus::Decoded => Focus::Encoded,
-                    }
-                }
-                KeyCode::Enter => {
-                    let cmd = |content: String| -> CopyToClipboard<String> {
-                        CopyToClipboard {
-                            content,
-                            destination: ClipboardSelection(vec![ClipboardType::Clipboard]),
+        match event::read()? {
+            event::Event::Key(event::KeyEvent {
+                code,
+                kind: event::KeyEventKind::Press,
+                ..
+            }) => {
+                match code {
+                    KeyCode::Char(c) => {
+                        // Only edit input when input line is focused
+                        if focus == Focus::Input {
+                            input.push(c);
                         }
-                    };
-                    // Copy currently focused line to clipboard using crossterm clipboard support
-                    let is_err = match focus {
-                        Focus::Input => stdout.execute(cmd(input.clone())).is_err(),
-                        Focus::Encoded => {
-                            let encoded = encode_string(&input);
-                            stdout.execute(cmd(encoded)).is_err()
+                    }
+                    KeyCode::Backspace => {
+                        if focus == Focus::Input {
+                            input.pop();
                         }
-                        Focus::Decoded => {
-                            if let Some(ref s) = decode_string(&input) {
-                                stdout.execute(cmd(s.clone())).is_err()
-                            } else {
-                                false
+                    }
+                    KeyCode::Esc => {
+                        // User cancelled input. Exit loop.
+                        break;
+                    }
+                    KeyCode::Up => {
+                        focus = match focus {
+                            Focus::Input => Focus::Decoded,
+                            Focus::Encoded => Focus::Input,
+                            Focus::Decoded => Focus::Encoded,
+                        }
+                    }
+                    KeyCode::Enter => {
+                        let cmd = |content: String| -> CopyToClipboard<String> {
+                            CopyToClipboard {
+                                content,
+                                destination: ClipboardSelection(vec![ClipboardType::Clipboard]),
                             }
-                        }
-                    };
+                        };
+                        // Copy currently focused line to clipboard using crossterm clipboard support
+                        let is_err = match focus {
+                            Focus::Input => stdout.execute(cmd(input.clone())).is_err(),
+                            Focus::Encoded => {
+                                let encoded = encode_string(&input);
+                                stdout.execute(cmd(encoded)).is_err()
+                            }
+                            Focus::Decoded => {
+                                if let Some(ref s) = decode_string(&input) {
+                                    stdout.execute(cmd(s.clone())).is_err()
+                                } else {
+                                    false
+                                }
+                            }
+                        };
 
-                    if is_err {
-                        status_line = "Failed to copy to clipboard.\r\n";
-                    } else {
-                        status_line = "Copied to clipboard!\r\n";
+                        if is_err {
+                            status_line = "Failed to copy to clipboard.\r\n";
+                        } else {
+                            status_line = "Copied to clipboard!\r\n";
+                        }
                     }
-                }
-                KeyCode::Down => {
-                    focus = match focus {
-                        Focus::Input => Focus::Encoded,
-                        Focus::Encoded => Focus::Decoded,
-                        Focus::Decoded => Focus::Input,
+                    KeyCode::Down => {
+                        focus = match focus {
+                            Focus::Input => Focus::Encoded,
+                            Focus::Encoded => Focus::Decoded,
+                            Focus::Decoded => Focus::Input,
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
+            event::Event::Paste(content) => {
+                // On paste event, insert content at cursor if input line is focused
+                if focus == Focus::Input {
+                    input.push_str(&content);
+                }
+            }
+            _ => {}
         }
     }
-
     Ok(())
 }
