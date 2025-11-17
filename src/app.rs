@@ -55,6 +55,15 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
 
     let mut input = String::new();
 
+    #[derive(PartialEq, Eq)]
+    enum Focus {
+        Input,
+        Encoded,
+        Decoded,
+    }
+
+    let mut focus = Focus::Input;
+
     // Save cursor position so we can restore & redraw
     queue!(stdout, cursor::Hide, cursor::SavePosition)?;
     stdout.flush()?;
@@ -75,14 +84,23 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
                     .with(Color::Cyan)
                     .attribute(Attribute::Bold),
             ),
-            style::Print(&input),
-            style::Print("⏎"),
-            style::Print("\r\n"),
         )?;
+
+        if focus == Focus::Input {
+            queue!(stdout, style::SetAttribute(Attribute::Reverse))?;
+        }
+        queue!(stdout, style::Print(&input))?;
+        queue!(stdout, style::Print("⏎"))?;
+        if focus == Focus::Input {
+            queue!(stdout, style::SetAttribute(Attribute::NoReverse))?;
+        }
+
+        queue!(stdout, style::Print("\r\n"))?;
         stdout.flush()?;
 
         // Print encoded string
         let encoded = encode_string(&input);
+        // Encoded line: show focus and persistent highlight
         queue!(
             stdout,
             style::PrintStyledContent(
@@ -90,9 +108,16 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
                     .with(Color::Green)
                     .attribute(Attribute::Bold),
             ),
-            style::Print(&encoded.with(Color::Yellow)),
-            style::Print(" \r\n"),
         )?;
+
+        if focus == Focus::Encoded {
+            queue!(stdout, style::SetAttribute(Attribute::Reverse))?;
+        }
+        queue!(stdout, style::Print(&encoded.with(Color::Yellow)))?;
+        if focus == Focus::Encoded {
+            queue!(stdout, style::SetAttribute(Attribute::NoReverse))?;
+        }
+        queue!(stdout, style::Print(" \r\n"))?;
         stdout.flush()?;
 
         // Print decoded string
@@ -100,6 +125,7 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
             Some(s) => s.with(Color::Yellow),
             None => "<invalid input>".to_string().with(Color::Red),
         };
+        // Decoded line: show focus and persistent highlight
         queue!(
             stdout,
             style::PrintStyledContent(
@@ -107,23 +133,48 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
                     .with(Color::Green)
                     .attribute(Attribute::Bold),
             ),
-            style::Print(&decoded),
-            style::Print(" \r\n"),
         )?;
+        if focus == Focus::Decoded {
+            queue!(stdout, style::SetAttribute(Attribute::Reverse))?;
+        }
+        queue!(stdout, style::Print(&decoded))?;
+        if focus == Focus::Decoded {
+            queue!(stdout, style::SetAttribute(Attribute::NoReverse))?;
+        }
+        queue!(stdout, style::Print(" \r\n"))?;
         stdout.flush()?;
 
         // Wait for key event
         if let event::Event::Key(event::KeyEvent { code, kind, .. }) = event::read()? {
-            match code {
-                KeyCode::Char(c) if kind == event::KeyEventKind::Press => {
-                    input.push(c);
+            match (code, kind) {
+                (KeyCode::Char(c), event::KeyEventKind::Press) => {
+                    // Only edit input when input line is focused
+                    if focus == Focus::Input {
+                        input.push(c);
+                    }
                 }
-                KeyCode::Backspace => {
-                    input.pop();
+                (KeyCode::Backspace, _) => {
+                    if focus == Focus::Input {
+                        input.pop();
+                    }
                 }
-                KeyCode::Esc => {
+                (KeyCode::Esc, _) => {
                     // User cancelled input. Exit loop.
                     break;
+                }
+                (KeyCode::Up, _) => {
+                    focus = match focus {
+                        Focus::Input => Focus::Decoded,
+                        Focus::Encoded => Focus::Input,
+                        Focus::Decoded => Focus::Encoded,
+                    }
+                }
+                (KeyCode::Down, _) => {
+                    focus = match focus {
+                        Focus::Input => Focus::Encoded,
+                        Focus::Encoded => Focus::Decoded,
+                        Focus::Decoded => Focus::Input,
+                    }
                 }
                 _ => {}
             }
