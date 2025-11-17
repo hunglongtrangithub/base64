@@ -69,8 +69,7 @@ fn main() -> std::io::Result<()> {
                 );
                 let decoded_string = decode_string(&input);
                 match decoded_string {
-                    Some(bytes) => {
-                        let decoded_str = String::from_utf8_lossy(&bytes);
+                    Some(decoded_str) => {
                         println!("Decoded string: {}", decoded_str);
                     }
                     None => {

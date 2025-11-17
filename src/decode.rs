@@ -76,6 +76,8 @@ fn decode_4_bytes(input_slice: &[u8], is_last: bool, output_slice: &mut [u8; 3])
     }
 }
 
+/// Decode input base64 bytes into original bytes.
+/// Returns `None` if the input is invalid.
 fn decode_bytes(input_bytes: &[u8]) -> Option<Box<[u8]>> {
     let (chunks, remainder) = input_bytes.as_chunks::<4>();
 
@@ -109,7 +111,10 @@ fn decode_bytes(input_bytes: &[u8]) -> Option<Box<[u8]>> {
     Some(output_bytes.into_boxed_slice())
 }
 
-pub fn decode_string(input_string: &str) -> Option<Box<[u8]>> {
+/// Decode input base64 string into original bytes.
+/// Returns `None` if the input is invalid.
+pub fn decode_string(input_string: &str) -> Option<String> {
     let input_bytes = input_string.as_bytes();
-    decode_bytes(input_bytes)
+    let output_bytes = decode_bytes(input_bytes)?;
+    Some(String::from_utf8_lossy(&output_bytes).to_string())
 }
