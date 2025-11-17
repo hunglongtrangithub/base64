@@ -13,6 +13,9 @@ const PAD_CHAR: u8 = b'=';
 /// If input slice is empty, all bytes of the output slice are set to be [`N`].
 /// After this function, all bytes of the output slice are always less than or
 /// equal to [`N`].
+/// # Arguments
+/// * `input_slice` - A slice of input bytes.
+/// * `output_slice` - A mutable array slice to hold the encoded base64 indices.
 fn encode_3_bytes(input_slice: &[u8], output_slice: &mut [u8; 4]) {
     let input_slice = &input_slice[..input_slice.len().min(3)];
     let mask_6_bit = 0b0011_1111;
@@ -46,6 +49,7 @@ fn encode_3_bytes(input_slice: &[u8], output_slice: &mut [u8; 4]) {
     }
 }
 
+/// Encode input bytes into base64 bytes.
 fn encode_bytes(input_bytes: &[u8]) -> Box<[u8]> {
     let (chunks, remainder) = input_bytes.as_chunks::<3>();
 
@@ -77,12 +81,15 @@ fn encode_bytes(input_bytes: &[u8]) -> Box<[u8]> {
     output_bytes.into_boxed_slice()
 }
 
+/// Encode input string into base64 string.
 fn encode_string(input_string: &str) -> String {
     let input_bytes = input_string.as_bytes();
     let output_bytes = encode_bytes(input_bytes);
     String::from_utf8_lossy(&output_bytes).to_string()
 }
 
+/// Get the index of input base64 character in the base64 table.
+/// If the input character is not in the base64 table, return None.
 fn get_table_index(input_char: u8) -> Option<u8> {
     match input_char {
         b'A'..=b'z' => TABLE[0..52]
@@ -104,9 +111,20 @@ fn get_table_index(input_char: u8) -> Option<u8> {
 /// `[0...8...16....]`
 /// Only care about the first 4 bytes. If input slice's length is less than 4, consider the
 /// remaining bytes to be padding characters (`=`).
-/// Returns the number of bytes written to output slice.
-/// If there is any invalid character in the input slice or if the input slice has only one
-/// base64 character (excluding trailing padding characters), return None.
+///
+/// # Arguments
+/// * `input_slice` - A slice of input base64 characters (as bytes).
+/// * `is_last` - A boolean indicating whether this is the last chunk to decode.
+/// * `output_slice` - A mutable array slice to hold the decoded bytes.
+///
+/// # Returns
+/// An `Option<usize>` indicating the number of bytes written to output slice,
+/// or `None` if the input is invalid.
+/// * `Some(n)` - Number of bytes written to output slice (0 <= n <= 3).
+/// * `None` - Invalid input:
+///   - Invalid base64 character found in the input slice (except trailing padding character).
+///   - Input slice length (excluding trailing padding characters) less than 4 and not the last chunk.
+///   - Input length of 1 (not enough to form a byte).
 fn decode_4_bytes(input_slice: &[u8], is_last: bool, output_slice: &mut [u8; 3]) -> Option<usize> {
     let input_slice = &input_slice[..input_slice.len().min(4)];
     let input_len = {
@@ -188,14 +206,12 @@ fn decode_bytes(input_bytes: &[u8]) -> Option<Box<[u8]>> {
     }
 
     if !remainder.is_empty() {
-        println!("Decoding remainder: {:?}", remainder);
         let num_bytes = decode_4_bytes(remainder, true, &mut output_chunk)?;
         output_bytes[output_index..output_index + num_bytes]
             .copy_from_slice(&output_chunk[..num_bytes]);
     }
 
     output_bytes.truncate(output_index);
-    println!("Decoded bytes: {:?}", &output_bytes);
     Some(output_bytes.into_boxed_slice())
 }
 
