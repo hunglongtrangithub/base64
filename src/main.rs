@@ -1,10 +1,6 @@
+mod app;
 mod decode;
 mod encode;
-
-use std::io::{Read, Write};
-
-use crate::decode::decode_string;
-use crate::encode::encode_string;
 
 const N: u8 = 64;
 const TABLE: &[u8; N as usize] =
@@ -32,59 +28,10 @@ fn get_table_index(input_char: u8) -> Option<u8> {
 
 fn main() -> std::io::Result<()> {
     let mut stdout = std::io::stdout();
-    let mut stdin = std::io::stdin();
-
-    println!("Base64 Encoder/Decoder");
-    print!("Type your input first: ");
-    stdout.flush()?;
-
-    let mut input = String::new();
-    stdin.read_line(&mut input)?;
-    input.pop(); // Remove new-line char
-
-    loop {
-        print!("Encode (1) or Decode (2): ");
-        stdout.flush()?;
-
-        let mut choice = [0u8];
-        stdin.read_exact(&mut choice)?;
-
-        let first_char = choice[0];
-        match first_char {
-            b'1' => {
-                println!(
-                    "Encoding input: {}. Number of bytes: {}",
-                    input,
-                    input.len()
-                );
-                let encoded_string = encode_string(&input);
-                println!("Encoded string: {}", encoded_string);
-                break;
-            }
-            b'2' => {
-                println!(
-                    "Decoding input: {}. Number of bytes: {}",
-                    input,
-                    input.len()
-                );
-                let decoded_string = decode_string(&input);
-                match decoded_string {
-                    Some(decoded_str) => {
-                        println!("Decoded string: {}", decoded_str);
-                    }
-                    None => {
-                        println!("Invalid base64 input string.");
-                    }
-                }
-                break;
-            }
-            _ => {
-                println!("Invalid input. Try again.");
-                continue;
-            }
-        };
-    }
-    Ok(())
+    app::setup_terminal(&mut stdout)?;
+    let res = app::run(&mut stdout);
+    app::restore_terminal(&mut stdout)?;
+    res
 }
 
 #[cfg(test)]
