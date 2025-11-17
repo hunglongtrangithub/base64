@@ -161,31 +161,33 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
         stdout.flush()?;
 
         // Wait for key event
-        if let event::Event::Key(event::KeyEvent { code, kind, .. }) = event::read()? {
-            match (code, kind) {
-                (KeyCode::Char(c), event::KeyEventKind::Press) => {
+        if let event::Event::Key(event::KeyEvent { code, kind, .. }) = event::read()?
+            && kind == event::KeyEventKind::Press
+        {
+            match code {
+                KeyCode::Char(c) => {
                     // Only edit input when input line is focused
                     if focus == Focus::Input {
                         input.push(c);
                     }
                 }
-                (KeyCode::Backspace, _) => {
+                KeyCode::Backspace => {
                     if focus == Focus::Input {
                         input.pop();
                     }
                 }
-                (KeyCode::Esc, _) => {
+                KeyCode::Esc => {
                     // User cancelled input. Exit loop.
                     break;
                 }
-                (KeyCode::Up, _) => {
+                KeyCode::Up => {
                     focus = match focus {
                         Focus::Input => Focus::Decoded,
                         Focus::Encoded => Focus::Input,
                         Focus::Decoded => Focus::Encoded,
                     }
                 }
-                (KeyCode::Enter, _) => {
+                KeyCode::Enter => {
                     let cmd = |content: String| -> CopyToClipboard<String> {
                         CopyToClipboard {
                             content,
@@ -214,7 +216,7 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
                         status_line = "Copied to clipboard!\r\n";
                     }
                 }
-                (KeyCode::Down, _) => {
+                KeyCode::Down => {
                     focus = match focus {
                         Focus::Input => Focus::Encoded,
                         Focus::Encoded => Focus::Decoded,
