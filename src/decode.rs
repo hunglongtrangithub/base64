@@ -111,7 +111,9 @@ fn decode_bytes(input_bytes: &[u8]) -> Option<Box<[u8]>> {
     Some(output_bytes.into_boxed_slice())
 }
 
-/// Decode input base64 string into original bytes.
+/// Decode input base64 string into original string.
+/// This function tries to decode the input string as UTF-8 after decoding the base64 bytes.
+/// Replacement characters will be used for invalid UTF-8 sequences.
 /// Returns `None` if the input is invalid.
 pub fn decode_string(input_string: &str) -> Option<String> {
     let input_bytes = input_string.as_bytes();
