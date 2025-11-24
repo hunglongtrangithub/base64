@@ -6,7 +6,7 @@ use crossterm::{ExecutableCommand, cursor, event, queue, style, terminal};
 
 use std::io::{Stdout, Write};
 
-use crate::decode::decode_string;
+use crate::decode::{DecodeError, decode_string};
 use crate::encode::encode_string;
 
 /// Set a panic hook to restore terminal state on panic
@@ -138,8 +138,14 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
         let decoded = decode_string(&input);
 
         let displayed_decoded = match decoded {
-            Some(s) => s.with(Color::Yellow),
-            None => "<invalid input>".to_string().with(Color::Red),
+            Ok(s) => s.with(Color::Yellow),
+            Err(err) => {
+                let msg = match err {
+                    DecodeError::InvalidLength => "<Invalid input length>".to_string(),
+                    DecodeError::InvalidByte(_) => "<Input contains invalid byte>".to_string(),
+                };
+                msg.with(Color::Red)
+            }
         };
         // Decoded line: show focus and persistent highlight
         queue!(
@@ -204,13 +210,10 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
                                 let encoded = encode_string(&input);
                                 stdout.execute(cmd(encoded)).is_err()
                             }
-                            Focus::Decoded => {
-                                if let Some(ref s) = decode_string(&input) {
-                                    stdout.execute(cmd(s.clone())).is_err()
-                                } else {
-                                    false
-                                }
-                            }
+                            Focus::Decoded => match decode_string(&input) {
+                                Ok(s) => stdout.execute(cmd(s.clone())).is_err(),
+                                Err(_) => false,
+                            },
                         };
 
                         if is_err {
