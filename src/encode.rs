@@ -12,15 +12,15 @@ fn encode_bytes(input_bytes: &[u8]) -> Box<[u8]> {
     } else {
         4 * chunks.len() + 4
     };
-    let mut output_bytes = vec![0u8; output_len];
+    let mut output_bytes = Box::<[u8]>::new_uninit_slice(output_len);
 
     // Process each chunk of 3 bytes
     for (i, chunk) in chunks.iter().enumerate() {
         let start_idx = 4 * i;
-        output_bytes[start_idx] = chunk[0] >> 2;
-        output_bytes[start_idx + 1] = (chunk[0] << 4) & MASK_6_BITS | (chunk[1] >> 4);
-        output_bytes[start_idx + 2] = (chunk[1] << 2) & MASK_6_BITS | (chunk[2] >> 6);
-        output_bytes[start_idx + 3] = chunk[2] & MASK_6_BITS;
+        output_bytes[start_idx].write(chunk[0] >> 2);
+        output_bytes[start_idx + 1].write((chunk[0] << 4) & MASK_6_BITS | (chunk[1] >> 4));
+        output_bytes[start_idx + 2].write((chunk[1] << 2) & MASK_6_BITS | (chunk[2] >> 6));
+        output_bytes[start_idx + 3].write(chunk[2] & MASK_6_BITS);
     }
 
     // Process remainder bytes
@@ -29,21 +29,25 @@ fn encode_bytes(input_bytes: &[u8]) -> Box<[u8]> {
         0 => {}
         1 => {
             let start_idx = 4 * chunks.len();
-            output_bytes[start_idx] = remainder[0] >> 2;
-            output_bytes[start_idx + 1] = (remainder[0] << 4) & MASK_6_BITS;
-            output_bytes[start_idx + 2] = N;
-            output_bytes[start_idx + 3] = N;
+            output_bytes[start_idx].write(remainder[0] >> 2);
+            output_bytes[start_idx + 1].write((remainder[0] << 4) & MASK_6_BITS);
+            output_bytes[start_idx + 2].write(N);
+            output_bytes[start_idx + 3].write(N);
         }
         2 => {
             let start_idx = 4 * chunks.len();
-            output_bytes[start_idx] = remainder[0] >> 2;
-            output_bytes[start_idx + 1] = (remainder[0] << 4) & MASK_6_BITS | (remainder[1] >> 4);
-            output_bytes[start_idx + 2] = (remainder[1] << 2) & MASK_6_BITS;
-            output_bytes[start_idx + 3] = N;
+            output_bytes[start_idx].write(remainder[0] >> 2);
+            output_bytes[start_idx + 1]
+                .write((remainder[0] << 4) & MASK_6_BITS | (remainder[1] >> 4));
+            output_bytes[start_idx + 2].write((remainder[1] << 2) & MASK_6_BITS);
+            output_bytes[start_idx + 3].write(N);
         }
         // Can only be length 0, 1, or 2. Guaranteed by as_chunks.
         _ => unreachable!(),
     }
+
+    // SAFETY: All elements of output_bytes have been initialized.
+    let mut output_bytes = unsafe { output_bytes.assume_init() };
 
     // Map 6-bit values to base64 characters
     (0..output_len).for_each(|i| {
@@ -51,7 +55,7 @@ fn encode_bytes(input_bytes: &[u8]) -> Box<[u8]> {
         output_bytes[i] = *TABLE.get(table_index).unwrap_or(&PAD_CHAR);
     });
 
-    output_bytes.into_boxed_slice()
+    output_bytes
 }
 
 /// Encode input string into base64 string.
