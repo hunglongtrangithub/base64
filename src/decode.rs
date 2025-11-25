@@ -5,7 +5,8 @@ pub enum DecodeError {
     /// The input length (after trimming padding) is invalid for decoding.
     /// This occurs when the length mod 4 is 1 (after trimming padding).
     InputLength,
-    /// Padding character found in a non-final chunk.
+    /// Padding character found in a non-final chunk, or incorrect amount of
+    /// trailing padding characters for the final chunk.
     WrongPadding,
     /// An invalid base64 character was encountered (byte value returned).
     InvalidByte(u8),
@@ -15,7 +16,7 @@ pub enum DecodeError {
 /// Returns `None` if the input is invalid.
 fn decode_bytes(input_bytes: &[u8]) -> Result<Box<[u8]>, DecodeError> {
     // Trim trailing padding characters first
-    let input_bytes = {
+    let (input_bytes, trailing_len) = {
         let mut end = input_bytes.len();
         while end > 0 {
             if input_bytes[end - 1] == PAD_CHAR {
@@ -24,18 +25,37 @@ fn decode_bytes(input_bytes: &[u8]) -> Result<Box<[u8]>, DecodeError> {
                 break;
             }
         }
-        &input_bytes[..end]
+        (&input_bytes[..end], input_bytes.len() - end)
     };
 
     let (chunks, remainder) = input_bytes.as_chunks::<4>();
 
     // Calculate output length
-    let output_len = if remainder.is_empty() {
-        3 * chunks.len()
-    } else {
-        3 * chunks.len() + 3
+    let output_len = match remainder.len() {
+        // No remainder bytes, output length only from full chunks
+        0 => 3 * chunks.len(),
+        // Only one base64 character left. Not enough to form a byte.
+        1 => return Err(DecodeError::InputLength),
+        2 => {
+            if trailing_len < 2 {
+                // Need at least 2 padding characters
+                return Err(DecodeError::WrongPadding);
+            }
+            // Two 6-bit values forms 1 byte ((2 * 6) / 8 = 1)
+            3 * chunks.len() + 1
+        }
+        3 => {
+            if trailing_len < 1 {
+                // Need at least 1 padding character
+                return Err(DecodeError::WrongPadding);
+            }
+            // Three 6-bit values forms 2 bytes ((3 * 6) / 8 = 2)
+            3 * chunks.len() + 2
+        }
+        // Can only be length 0, 1, 2, or 3. Guaranteed by as_chunks.
+        _ => unreachable!(),
     };
-    let mut output_bytes = vec![0u8; output_len];
+    let mut output_bytes = Box::<[u8]>::new_uninit_slice(output_len);
 
     // Helper closure to return table index or invalid byte error
     let get_index = |b: u8| -> Result<u8, DecodeError> {
@@ -52,38 +72,35 @@ fn decode_bytes(input_bytes: &[u8]) -> Result<Box<[u8]>, DecodeError> {
         let byte1 = (get_index(chunk[1])? << 4) | (get_index(chunk[2])? >> 2);
         let byte2 = (get_index(chunk[2])? << 6) | get_index(chunk[3])?;
         let start_idx = 3 * idx;
-        output_bytes[start_idx] = byte0;
-        output_bytes[start_idx + 1] = byte1;
-        output_bytes[start_idx + 2] = byte2;
+        output_bytes[start_idx].write(byte0);
+        output_bytes[start_idx + 1].write(byte1);
+        output_bytes[start_idx + 2].write(byte2);
     }
 
-    // Process remainder bytes and get actual output length
-    let actual_output_len = match remainder.len() {
+    // Process remainder bytes
+    match remainder.len() {
+        0 => {}
+        1 => return Err(DecodeError::InputLength),
+        2 => {
+            let start_index = 3 * chunks.len();
+            let byte0 = (get_index(remainder[0])? << 2) | (get_index(remainder[1])? >> 4);
+            output_bytes[start_index].write(byte0);
+        }
         3 => {
             let start_index = 3 * chunks.len();
             let byte0 = (get_index(remainder[0])? << 2) | (get_index(remainder[1])? >> 4);
             let byte1 = (get_index(remainder[1])? << 4) | (get_index(remainder[2])? >> 2);
-            output_bytes[start_index] = byte0;
-            output_bytes[start_index + 1] = byte1;
-            start_index + 2
+            output_bytes[start_index].write(byte0);
+            output_bytes[start_index + 1].write(byte1);
         }
-        2 => {
-            let start_index = 3 * chunks.len();
-            let byte0 = (get_index(remainder[0])? << 2) | (get_index(remainder[1])? >> 4);
-            output_bytes[start_index] = byte0;
-            start_index + 1
-        }
-        // Only one base64 character. Not enough to form a byte.
-        1 => return Err(DecodeError::InputLength),
-        // No remainder bytes, output length only from full chunks
-        0 => 3 * chunks.len(),
-        // Can only be length 0, 1, 2, or 3. Guaranteed by as_chunks.
         _ => unreachable!(),
     };
 
+    // SAFETY: All elements of output_bytes have been initialized.
+    let output_bytes = unsafe { output_bytes.assume_init() };
+
     // Truncate output bytes to actual output length
-    output_bytes.truncate(actual_output_len);
-    Ok(output_bytes.into_boxed_slice())
+    Ok(output_bytes)
 }
 
 /// Decode input base64 string into original string.
@@ -137,6 +154,8 @@ mod tests {
     fn test_decode_wrong_padding_in_middle() {
         assert_eq!(decode_bytes(b"ab==cdef"), Err(DecodeError::WrongPadding));
         assert_eq!(decode_bytes(b"abcd==ef"), Err(DecodeError::WrongPadding));
+        assert_eq!(decode_bytes(b"abcdef="), Err(DecodeError::WrongPadding));
+        assert_eq!(decode_bytes(b"abcdefg"), Err(DecodeError::WrongPadding));
     }
 
     #[test]
