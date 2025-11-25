@@ -116,7 +116,8 @@ mod tests {
         ];
 
         for (enc, expected) in cases {
-            let got = decode_bytes(enc).expect(&format!("decoding {:?} should succeed", enc));
+            let got = decode_bytes(enc)
+                .unwrap_or_else(|e| panic!("Decoding failed for {:?}: {:?}", enc, e));
             assert_eq!(&*got, *expected);
         }
     }
