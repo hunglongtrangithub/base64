@@ -141,7 +141,8 @@ pub fn run(stdout: &mut Stdout) -> std::io::Result<()> {
             Ok(s) => s.with(Color::Yellow),
             Err(err) => {
                 let msg = match err {
-                    DecodeError::InvalidLength => "<Invalid input length>".to_string(),
+                    DecodeError::WrongPadding => "<Invalid padding>".to_string(),
+                    DecodeError::InputLength => "<Invalid input length>".to_string(),
                     DecodeError::InvalidByte(_) => "<Input contains invalid byte>".to_string(),
                 };
                 msg.with(Color::Red)

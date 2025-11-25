@@ -12,16 +12,15 @@ const PAD_CHAR: u8 = b'=';
 /// If the input character is not in the base64 table, return None.
 fn get_table_index(input_char: u8) -> Option<u8> {
     match input_char {
-        b'A'..=b'z' => TABLE[0..52]
-            .binary_search(&input_char)
-            .map(|i| i as u8)
-            .ok(),
-        b'0'..=b'9' => TABLE[52..62]
-            .binary_search(&input_char)
-            .map(|i| (i + 52) as u8)
-            .ok(),
-        b'+' => Some(N - 2),
-        b'/' => Some(N - 1),
+        // Uppercase letters
+        b'A'..=b'Z' => Some(input_char - b'A'),
+        // Lowercase letters
+        b'a'..=b'z' => Some((input_char - b'a') + 26),
+        // Digits
+        b'0'..=b'9' => Some((input_char - b'0') + 52),
+        // Special characters
+        b'+' => Some(62),
+        b'/' => Some(63),
         _ => None,
     }
 }

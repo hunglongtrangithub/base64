@@ -3,105 +3,32 @@ use crate::{PAD_CHAR, get_table_index};
 #[derive(Debug, PartialEq, Eq)]
 pub enum DecodeError {
     /// The input length (after trimming padding) is invalid for decoding.
-    InvalidLength,
+    InputLength,
+    /// Padding character found in a non-final chunk.
+    WrongPadding,
     /// An invalid base64 character was encountered (byte value returned).
     InvalidByte(u8),
-}
-
-/// Decode up to 4 base64 characters from input slice into up to 3 bytes in output slice.
-///
-/// `[0..6..12..18..]`
-///
-/// `[0...8...16....]`
-///
-/// Only care about the first 4 bytes. If input slice's length is less than 4, consider the
-/// remaining bytes to be padding characters (`=`).
-///
-/// # Arguments
-/// * `input_slice` - A slice of input base64 characters (as bytes).
-/// * `is_last` - A boolean indicating whether this is the last chunk to decode.
-/// * `output_slice` - A mutable array slice to hold the decoded bytes.
-///
-/// # Returns
-/// An `Option<usize>` indicating the number of bytes written to output slice,
-/// or `None` if the input is invalid.
-/// * `Some(n)` - Number of bytes written to output slice (0 <= n <= 3).
-/// * `None` - Invalid input:
-///   - Invalid base64 character found in the input slice (except trailing padding character).
-///   - Input slice length (excluding trailing padding characters) less than 4 and not the last chunk.
-///   - Input length of 1 (not enough to form a byte).
-fn decode_4_bytes(
-    input_slice: &[u8],
-    is_last: bool,
-    output_slice: &mut [u8; 3],
-) -> Result<usize, DecodeError> {
-    let input_slice = &input_slice[..input_slice.len().min(4)];
-    let input_len = {
-        let mut input_len = input_slice.len();
-        while input_len > 0 {
-            if input_slice[input_len - 1] == PAD_CHAR {
-                input_len -= 1;
-            } else {
-                break;
-            }
-        }
-        input_len
-    };
-
-    // Hold the converted table indices
-    let index_slice = &mut [0u8; 4];
-
-    match input_len {
-        4 => {
-            for i in 0..4 {
-                // If any character is invalid, return InvalidByte with the offending byte
-                index_slice[i] = match get_table_index(input_slice[i]) {
-                    Some(b) => b,
-                    None => return Err(DecodeError::InvalidByte(input_slice[i])),
-                };
-            }
-
-            output_slice[0] = (index_slice[0] << 2) | (index_slice[1] >> 4);
-            output_slice[1] = (index_slice[1] << 4) | (index_slice[2] >> 2);
-            output_slice[2] = (index_slice[2] << 6) | index_slice[3];
-            Ok(3)
-        }
-        _ => {
-            if !is_last {
-                // If not the last chunk, input length must be 4
-                return Err(DecodeError::InvalidLength);
-            }
-
-            for i in 0..input_len {
-                index_slice[i] = match get_table_index(input_slice[i]) {
-                    Some(b) => b,
-                    None => return Err(DecodeError::InvalidByte(input_slice[i])),
-                };
-            }
-
-            match input_len {
-                3 => {
-                    output_slice[0] = (index_slice[0] << 2) | (index_slice[1] >> 4);
-                    output_slice[1] = (index_slice[1] << 4) | (index_slice[2] >> 2);
-                    Ok(2)
-                }
-                2 => {
-                    output_slice[0] = (index_slice[0] << 2) | (index_slice[1] >> 4);
-                    Ok(1)
-                }
-                0 => Ok(0),
-                // Only one base64 character. Not enough to form a byte.
-                _ => Err(DecodeError::InvalidLength),
-            }
-        }
-    }
 }
 
 /// Decode input base64 bytes into original bytes.
 /// Returns `None` if the input is invalid.
 fn decode_bytes(input_bytes: &[u8]) -> Result<Box<[u8]>, DecodeError> {
+    // Trim trailing padding characters first
+    let input_bytes = {
+        let mut end = input_bytes.len();
+        while end > 0 {
+            if input_bytes[end - 1] == PAD_CHAR {
+                end -= 1;
+            } else {
+                break;
+            }
+        }
+        &input_bytes[..end]
+    };
+
     let (chunks, remainder) = input_bytes.as_chunks::<4>();
 
+    // Calculate output length
     let output_len = if remainder.is_empty() {
         3 * chunks.len()
     } else {
@@ -109,26 +36,52 @@ fn decode_bytes(input_bytes: &[u8]) -> Result<Box<[u8]>, DecodeError> {
     };
     let mut output_bytes = vec![0u8; output_len];
 
-    // Scratch buffer to hold decoded 3 bytes
-    let mut output_chunk = [0u8; 3];
-    // Current index showing the number of bytes written to output_bytes
-    let mut output_index = 0;
+    // Helper closure to return table index or invalid byte error
+    let get_index = |b: u8| -> Result<u8, DecodeError> {
+        get_table_index(b).ok_or(DecodeError::InvalidByte(b))
+    };
 
+    // Process each chunk of 4 bytes
     for (idx, chunk) in chunks.iter().enumerate() {
-        let is_last = remainder.is_empty() && idx == chunks.len() - 1;
-        let num_bytes = decode_4_bytes(chunk, is_last, &mut output_chunk)?;
-        output_bytes[output_index..output_index + num_bytes]
-            .copy_from_slice(&output_chunk[..num_bytes]);
-        output_index += num_bytes;
+        if chunk.contains(&PAD_CHAR) {
+            return Err(DecodeError::WrongPadding);
+        }
+        // Chunk is valid, decode all 4 bytes
+        let byte0 = (get_index(chunk[0])? << 2) | (get_index(chunk[1])? >> 4);
+        let byte1 = (get_index(chunk[1])? << 4) | (get_index(chunk[2])? >> 2);
+        let byte2 = (get_index(chunk[2])? << 6) | get_index(chunk[3])?;
+        let start_idx = 3 * idx;
+        output_bytes[start_idx] = byte0;
+        output_bytes[start_idx + 1] = byte1;
+        output_bytes[start_idx + 2] = byte2;
     }
 
-    if !remainder.is_empty() {
-        let num_bytes = decode_4_bytes(remainder, true, &mut output_chunk)?;
-        output_bytes[output_index..output_index + num_bytes]
-            .copy_from_slice(&output_chunk[..num_bytes]);
-    }
+    // Process remainder bytes and get actual output length
+    let actual_output_len = match remainder.len() {
+        3 => {
+            let start_index = 3 * chunks.len();
+            let byte0 = (get_index(remainder[0])? << 2) | (get_index(remainder[1])? >> 4);
+            let byte1 = (get_index(remainder[1])? << 4) | (get_index(remainder[2])? >> 2);
+            output_bytes[start_index] = byte0;
+            output_bytes[start_index + 1] = byte1;
+            start_index + 2
+        }
+        2 => {
+            let start_index = 3 * chunks.len();
+            let byte0 = (get_index(remainder[0])? << 2) | (get_index(remainder[1])? >> 4);
+            output_bytes[start_index] = byte0;
+            start_index + 1
+        }
+        // Only one base64 character. Not enough to form a byte.
+        1 => return Err(DecodeError::InputLength),
+        // No remainder bytes, output length only from full chunks
+        0 => 3 * chunks.len(),
+        // Can only be length 0, 1, 2, or 3. Guaranteed by as_chunks.
+        _ => unreachable!(),
+    };
 
-    output_bytes.truncate(output_index);
+    // Truncate output bytes to actual output length
+    output_bytes.truncate(actual_output_len);
     Ok(output_bytes.into_boxed_slice())
 }
 
