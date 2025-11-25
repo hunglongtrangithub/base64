@@ -6,6 +6,8 @@ My little project to implement Base64 encoding and decoding, through which I pra
 2. Copy highlighted strings to clipboard using Enter key
 3. Paste input string from clipboard to input field
 
+The implementation follows the [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648) standard for Base64 encoding.
+
 And yes, this CLI handles UTF-8 strings properly! So emojis, non-Latin characters, etc. are all supported.
 
 I have a little demo here:
