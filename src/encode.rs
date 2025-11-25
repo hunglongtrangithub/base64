@@ -70,7 +70,22 @@ mod tests {
     use super::*;
     #[test]
     fn test_encode_bytes() {
-        assert_eq!(encode_bytes(&[]).as_ref(), b"");
-        assert_eq!(encode_bytes(b"f").as_ref(), b"Zg==");
+        // Valid base64 encodings for 'a' repeated lengths 0..9
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"", b""),
+            (b"YQ==", b"a"),
+            (b"YWE=", b"aa"),
+            (b"YWFh", b"aaa"),
+            (b"YWFhYQ==", b"aaaa"),
+            (b"YWFhYWE=", b"aaaaa"),
+            (b"YWFhYWFh", b"aaaaaa"),
+            (b"YWFhYWFhYQ==", b"aaaaaaa"),
+            (b"YWFhYWFhYWE=", b"aaaaaaaa"),
+            (b"YWFhYWFhYWFh", b"aaaaaaaaa"),
+        ];
+        for (expected, input) in cases {
+            let encoded = encode_bytes(input);
+            assert_eq!(&encoded[..], *expected);
+        }
     }
 }

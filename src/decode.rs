@@ -3,6 +3,7 @@ use crate::{PAD_CHAR, get_table_index};
 #[derive(Debug, PartialEq, Eq)]
 pub enum DecodeError {
     /// The input length (after trimming padding) is invalid for decoding.
+    /// This occurs when the length mod 4 is 1 (after trimming padding).
     InputLength,
     /// Padding character found in a non-final chunk.
     WrongPadding,
@@ -99,8 +100,47 @@ pub fn decode_string(input_string: &str) -> Result<String, DecodeError> {
 mod tests {
     use super::*;
     #[test]
-    fn test_encode_bytes() {
-        assert_eq!(decode_bytes(b"").ok().as_deref(), Some(b"".as_ref()));
-        assert_eq!(decode_bytes(b"Zg==").ok().as_deref(), Some(b"f".as_ref()));
+    fn test_decode_valid_lengths() {
+        // Valid base64 encodings for 'a' repeated lengths 0..9
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"", b""),
+            (b"YQ==", b"a"),
+            (b"YWE=", b"aa"),
+            (b"YWFh", b"aaa"),
+            (b"YWFhYQ==", b"aaaa"),
+            (b"YWFhYWE=", b"aaaaa"),
+            (b"YWFhYWFh", b"aaaaaa"),
+            (b"YWFhYWFhYQ==", b"aaaaaaa"),
+            (b"YWFhYWFhYWE=", b"aaaaaaaa"),
+            (b"YWFhYWFhYWFh", b"aaaaaaaaa"),
+        ];
+
+        for (enc, expected) in cases {
+            let got = decode_bytes(enc).expect(&format!("decoding {:?} should succeed", enc));
+            assert_eq!(&*got, *expected);
+        }
+    }
+
+    #[test]
+    fn test_decode_valid_with_padding() {
+        assert_eq!(decode_bytes(b"Zig=="), decode_bytes(b"Zig==="));
+    }
+
+    #[test]
+    fn test_decode_invalid_byte() {
+        assert_eq!(decode_bytes(b"Zig!"), Err(DecodeError::InvalidByte(b'!')));
+        assert_eq!(decode_bytes(b"Zig!"), Err(DecodeError::InvalidByte(b'!')));
+    }
+
+    #[test]
+    fn test_decode_wrong_padding_in_middle() {
+        assert_eq!(decode_bytes(b"ab==cdef"), Err(DecodeError::WrongPadding));
+        assert_eq!(decode_bytes(b"abcd==ef"), Err(DecodeError::WrongPadding));
+    }
+
+    #[test]
+    fn test_decode_invalid_length_single_char() {
+        assert_eq!(decode_bytes(b"a"), Err(DecodeError::InputLength));
+        assert_eq!(decode_bytes(b"abcde"), Err(DecodeError::InputLength));
     }
 }
