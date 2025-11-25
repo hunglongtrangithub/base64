@@ -68,30 +68,32 @@ fn decode_bytes(input_bytes: &[u8]) -> Result<Box<[u8]>, DecodeError> {
             return Err(DecodeError::WrongPadding);
         }
         // Chunk is valid, decode all 4 bytes
-        let byte0 = (get_index(chunk[0])? << 2) | (get_index(chunk[1])? >> 4);
-        let byte1 = (get_index(chunk[1])? << 4) | (get_index(chunk[2])? >> 2);
-        let byte2 = (get_index(chunk[2])? << 6) | get_index(chunk[3])?;
+        let idx0 = get_index(chunk[0])?;
+        let idx1 = get_index(chunk[1])?;
+        let idx2 = get_index(chunk[2])?;
+        let idx3 = get_index(chunk[3])?;
         let start_idx = 3 * idx;
-        output_bytes[start_idx].write(byte0);
-        output_bytes[start_idx + 1].write(byte1);
-        output_bytes[start_idx + 2].write(byte2);
+        output_bytes[start_idx].write((idx0 << 2) | (idx1 >> 4));
+        output_bytes[start_idx + 1].write((idx1 << 4) | (idx2 >> 2));
+        output_bytes[start_idx + 2].write((idx2 << 6) | idx3);
     }
 
     // Process remainder bytes
     match remainder.len() {
         0 => {}
-        1 => return Err(DecodeError::InputLength),
         2 => {
+            let idx0 = get_index(remainder[0])?;
+            let idx1 = get_index(remainder[1])?;
             let start_index = 3 * chunks.len();
-            let byte0 = (get_index(remainder[0])? << 2) | (get_index(remainder[1])? >> 4);
-            output_bytes[start_index].write(byte0);
+            output_bytes[start_index].write((idx0 << 2) | (idx1 >> 4));
         }
         3 => {
+            let idx0 = get_index(remainder[0])?;
+            let idx1 = get_index(remainder[1])?;
+            let idx2 = get_index(remainder[2])?;
             let start_index = 3 * chunks.len();
-            let byte0 = (get_index(remainder[0])? << 2) | (get_index(remainder[1])? >> 4);
-            let byte1 = (get_index(remainder[1])? << 4) | (get_index(remainder[2])? >> 2);
-            output_bytes[start_index].write(byte0);
-            output_bytes[start_index + 1].write(byte1);
+            output_bytes[start_index].write((idx0 << 2) | (idx1 >> 4));
+            output_bytes[start_index + 1].write((idx1 << 4) | (idx2 >> 2));
         }
         _ => unreachable!(),
     };
